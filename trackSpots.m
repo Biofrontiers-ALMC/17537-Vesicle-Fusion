@@ -1,27 +1,23 @@
 clearvars
 clc
 
-reader = BioformatsImage('../data/Cos7_mCh_Rab5_Halo_KDEL_002.nd2');
+reader = BioformatsImage('../data/Gessner_Vesicle Fusion Data/Cos7_mCh_Rab5_Halo_KDEL_002.nd2');
 
 LAP = LAPLinker;
-LAP.LinkScoreRange = [0, 50];
+LAP.LinkScoreRange = [0, 30];
+LAP.MaxTrackAge = 0;
 
 vid = VideoWriter('test.avi');
 vid.FrameRate = 7.5;
 open(vid);
 
-for iT = 1:50
+fprintf('Starting %s\n', datetime)
+
+for iT = 1:reader.sizeT
 
     I = getPlane(reader, 1, 1, iT);
 
-    % Try background subtraction
-    I_clean = double(imtophat(I, strel('disk', 20)));
-
-    %Spot detection
-    dogImg = imgaussfilt(I_clean, 2) - imgaussfilt(I_clean, 10);
-
-    spotMask = dogImg > 10;
-    spotMask = bwareaopen(spotMask, 30);
+    spotMask = identifySpots(I);
 
     spotData = regionprops(spotMask, 'Centroid');
 
@@ -37,7 +33,7 @@ for iT = 1:50
 
         if numel(ct.Frames) > 1
             Iout = insertShape(Iout, 'line', ct.Centroid);
-            Iout = insertText(Iout, ct.Centroid(end, :), int2str(id));
+            %Iout = insertText(Iout, ct.Centroid(end, :), int2str(id));
         end     
         
     end
@@ -47,3 +43,8 @@ for iT = 1:50
 end
 
 close(vid)
+
+tracks = LAP.tracks;
+
+save(sprintf('test_%s.mat', strrep(char(datetime), ':', '_')), 'reader', 'tracks')
+fprintf('Completed %s\n', datetime)
