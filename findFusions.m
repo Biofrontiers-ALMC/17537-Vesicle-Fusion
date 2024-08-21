@@ -1,86 +1,134 @@
 clearvars
 clc
 
-load test.mat
+load('test_21-Aug-2024 08_53_24.mat')
+ROI = [512 1666 250 350];
 
+%% First filter tracks
 
+trackID_to_delete = [];
 
-%%
-%Find tracks which end in the middle of the video
-tracks = LAP.tracks;
+nFrames = zeros(1, tracks.NumTracks);
+for iT = 1:tracks.NumTracks
 
-validTrackIdxs = [];
+    ct = getTrack(tracks, iT);
 
-for iTrack = 1:tracks.NumTracks
+    nFrames(iT) = numel(ct.Frames);
 
-    ct = getTrack(tracks, iTrack);
-
-    if ct.Frames(end) > 5 && ct.Frames(end) < 50 && numel(ct.Frames) > 10
-        validTrackIdxs(end + 1) = iTrack;
+    if numel(ct.Frames) <= 4
+        trackID_to_delete(end + 1) = iT;
     end
 
 end
+
+filteredTracks = tracks;
+for ii = 1:numel(trackID_to_delete)
+    filteredTracks = deleteTrack(filteredTracks, trackID_to_delete(ii));
+end
+
+%Remake a video
+
+vid = VideoWriter('20240821_filteredTracks.avi');
+vid.FrameRate = 7.5;
+open(vid);
+
+for iT = 1:reader.sizeT
+
+    I = getPlane(reader, 1, 1, iT, 'ROI', ROI);
+
+    I_clean = medfilt2(I, [3 3]);
+    I_clean = double(imtophat(I_clean, strel('disk', 20)));
+
+    Iout = (I_clean - min(I_clean(:)))/(max(I_clean(:)) - min(I_clean(:)));
+
+    for idx = 1:filteredTracks.NumTracks
+
+        id = filteredTracks.Tracks(idx).ID;
+
+        ct = getTrack(filteredTracks, id);
+
+        frameIdx = find(ct.Frames == iT, 1, 'first');
+
+        if ~isempty(frameIdx)
+
+            Iout = insertShape(Iout, 'filled-circle', [ct.Centroid(frameIdx, :), 3]);
+            Iout = insertText(Iout, ct.Centroid(frameIdx, :), int2str(id), 'BoxOpacity', 0, 'FontColor', 'white');
+
+            if frameIdx > 1
+
+                Iout = insertShape(Iout, 'line', ct.Centroid(1:frameIdx, :));
+
+            end
+        end
+    end
+
+    writeVideo(vid, Iout)
+end
+
+close(vid)
+
+%% Try and identify fusion events
+
+trackPositions = nan(filteredTracks.NumTracks, filteredTracks.MaxFrame, 2);
+
+for idx = 1:filteredTracks.NumTracks
+
+    id = filteredTracks.Tracks(idx).ID;
+
+    ct = getTrack(filteredTracks, id);
+
+    centroids = cat(1, ct.Centroid);
+    centroids = reshape(centroids, 1, [], 2);
+    trackPositions(idx, ct.Frames, :) = centroids;
+
+end
+
 %%
-%Now parse through tracks and see if there was another track nearby
-for iVT = validTrackIdxs
 
-    ct = getTrack(tracks, iVT);
+fusionEvents = struct('particleID', [], 'fusedInto', [], 'frame', []);
 
-    lastFrame = ct.Frames(end);
+for iRow = 1:size(trackPositions, 1)
 
-    for iTrack = 1:tracks.NumTracks
+    %Find where track ends
+    idxFirstFrame = find(~isnan(trackPositions(iRow, :, 1)), 1, 'first');
+    idxLastFrame = find(isnan(trackPositions(iRow, idxFirstFrame:end, 1)), 1, 'first');
 
-        if iTrack == iVT
-            continue
+    idxLastFrame = idxLastFrame + idxFirstFrame - 2;
+
+    if idxLastFrame < size(trackPositions, 2) 
+
+        lastPosition = trackPositions(iRow, idxLastFrame, :);
+
+        %Grab all other known particle positions
+        otherParticlePositions = trackPositions(:, idxLastFrame, :);
+
+        %Calculate distance
+        distances = sqrt(sum((lastPosition - otherParticlePositions).^2, 3));
+
+        idxFusionCandidate = find((distances > 0) & (distances <= 20), 1, 'first');
+
+        if ~isempty(idxFusionCandidate)
+            eventIdx = numel(fusionEvents) + 1;
+            fusionEvents(eventIdx).particleID = filteredTracks.Tracks(iRow).ID;
+            fusionEvents(eventIdx).fusedInto = filteredTracks.Tracks(idxFusionCandidate).ID;
+            fusionEvents(eventIdx).frame = idxLastFrame;
         end
-
-        ot = getTrack(tracks, iTrack);
-
-        if ismember(lastFrame, ot.Frames)
-
-            idx = find(ot.Frames == lastFrame, 1, 'first');
-
-            %Skip if the fusion happens near the start of the track - this
-            %is likely a mis-identification issue
-            if idx < 2
-                continue
-            end
-
-            ot_pos = ot.Centroid(idx, :);
-
-            dist = sqrt(sum((ot_pos - ct.Centroid(end, :)).^2, 2));
-
-            if dist <= 10
-
-                vid = VideoWriter(sprintf('test_zoom_%d_%d.avi', ot.ID, ct.ID));
-                vid.FrameRate = 1;
-                open(vid)
-                %Get 5 frames before and 5 frames after
-                for iFrame = (lastFrame - 5):(lastFrame + 5)
-
-                    I = imadjust(getPlane(reader, 1, 1, iFrame));
-                    I = imtophat(I, strel('disk', 20));
-
-                    idx_ot = find(ot.Frames == iFrame, 1, 'first');
-
-                    if ~isempty(idx_ot)
-                        I = insertShape(I, 'circle', [ot.Centroid(idx_ot, :), 12], 'color', 'blue');
-                    end
-
-                    idx_ct = find(ct.Frames == iFrame, 1, 'first');
-                    if ~isempty(idx_ct)
-                        I = insertShape(I, 'circle', [ct.Centroid(idx_ct, :), 12], 'color', 'red');
-                    end
-
-                    I = im2double(I);
-                    writeVideo(vid, I);
-
-                    
-                end
-                close(vid)
-
-            end
-        end
-
     end
 end
+
+%See if there is another particle near the end of this particle's last
+%known position. TODO: Find gaps in middle of track
+
+save('20240821_fusionEvents.mat', 'fusionEvents')
+
+
+
+
+
+
+
+
+
+
+
+

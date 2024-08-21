@@ -3,11 +3,13 @@ clc
 
 reader = BioformatsImage('../data/Gessner_Vesicle Fusion Data/Cos7_mCh_Rab5_Halo_KDEL_002.nd2');
 
-LAP = LAPLinker;
-LAP.LinkScoreRange = [0, 30];
-LAP.MaxTrackAge = 0;
+ROI = [512 1666 250 350];
 
-vid = VideoWriter('test.avi');
+LAP = LAPLinker;
+LAP.LinkScoreRange = [0, 15];
+LAP.MaxTrackAge = 2;
+
+vid = VideoWriter('20240821_tracking_test.avi');
 vid.FrameRate = 7.5;
 open(vid);
 
@@ -15,17 +17,21 @@ fprintf('Starting %s\n', datetime)
 
 for iT = 1:reader.sizeT
 
-    I = getPlane(reader, 1, 1, iT);
+    I = getPlane(reader, 1, 1, iT, 'ROI', ROI);
 
-    spotMask = identifySpots(I);
+    I_clean = medfilt2(I, [3 3]);
+    I_clean = double(imtophat(I_clean, strel('disk', 20)));
 
-    spotData = regionprops(spotMask, 'Centroid');
+    spotMask = identifySpots(I_clean);
+
+    spotData = regionprops(spotMask, 'Centroid', 'BoundingBox');
 
     LAP = assignToTrack(LAP, iT, spotData);
 
     Iout = im2double(I);
-    
-    Iout = insertShape(Iout, 'circle', [cat(1, spotData.Centroid) ones(numel(spotData), 1) * 3]);
+
+    Inorm = (I_clean - min(I_clean(:)))/(max(I_clean(:)) - min(I_clean(:)));
+    Iout = insertShape(Inorm, 'filled-circle', [cat(1, spotData.Centroid), ones(numel(spotData), 1) * 3]);
 
     for id = LAP.activeTrackIDs
 
@@ -33,7 +39,6 @@ for iT = 1:reader.sizeT
 
         if numel(ct.Frames) > 1
             Iout = insertShape(Iout, 'line', ct.Centroid);
-            %Iout = insertText(Iout, ct.Centroid(end, :), int2str(id));
         end     
         
     end
