@@ -25,6 +25,14 @@ The code works by first identifying endosomes in images using the difference of 
 
 **Note:** The first two toolboxes are shipped with MATLAB and can be installed using the MATLAB installer. The latter two can be downloaded using the links above. After downloading, simply open the *.mltbx files with MATLAB to install.
 
+### Download files
+
+1. Download the latest version as a Zip file from [Releases](https://github.com/Biofrontiers-ALMC/17537-Vesicle-Fusion/releases).
+
+2. Extract the file e.g., to your MATLAB folder.
+
+3. Right-click on the folder, the select "Add to Path" > "Selected folders"
+
 ### Overview
 
 The code is broken up into two classes:
