@@ -4,7 +4,7 @@ The goal of this project was to identify endosome fusion events.
 
 ## Code description
 
-The code works by first identifying endosomes in images using the difference of Guassians filter. The endosomes were then tracked over the video, and the resulting data was filtered to keep tracks that were at least 4 frames long. Fusion events were then identified by looking for tracks which ended within 20 pixels of another particle.
+The code works by first identifying endosomes in images using the difference of Gaussians filter. The endosomes were then tracked over the video, and the resulting data was filtered to keep tracks that were at least 4 frames long. Fusion events were then identified by looking for tracks which ended within 20 pixels of another particle.
 
 ### Known limitations
 
